@@ -9,37 +9,83 @@ import aiohttp
 import argparse
 import json
 import sys
+import os  # Added for OPENAI_API_KEY environment variable
 
 
-async def test_proxy(proxy_host: str, proxy_port: int):
-    """Test the proxy server with a simple OpenAI API request"""
+async def test_proxy(proxy_host: str, proxy_port: int, api_key: str):
+    """Test the proxy server with a POST request to /v1/chat/completions"""
 
-    # Test URL - using the models endpoint as it doesn't require specific API keys
-    test_url = f"http://{proxy_host}:{proxy_port}/v1/models"
+    test_url = f"http://{proxy_host}:{proxy_port}/v1/chat/completions"
 
     print(f"Testing proxy at {proxy_host}:{proxy_port}")
-    print(f"Target URL: {test_url}")
+    print(f"Target URL: {test_url} (POST)")
     print("-" * 50)
+
+    if not api_key:
+        print("⚠️  OPENAI_API_KEY not provided.")
+        print("    Please provide it via the --api-key argument or by setting the OPENAI_API_KEY environment variable.")
+        print("    Skipping chat completions test.")
+        return
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {api_key}"
+    }
+    payload = {
+        "model": "gpt-4.1-nano",  # Using a generally available or smaller model for testing
+        "messages": [
+            {
+                "role": "system",  # Standard role for system-level instructions
+                "content": "You are a helpful assistant."
+            },
+            {
+                "role": "user",
+                "content": "Hello!"
+            }
+        ]
+    }
 
     try:
         async with aiohttp.ClientSession() as session:
-            # Test GET request
-            print("Testing GET request...")
-            async with session.get(test_url) as response:
+            print("Testing POST request to /v1/chat/completions...")
+            async with session.post(test_url, headers=headers, json=payload) as response:
                 print(f"Status: {response.status}")
-                print(f"Headers: {dict(response.headers)}")
+                # Limit printing of all headers as it can be verbose
+                print(f"Content-Type Header: {response.headers.get('Content-Type')}")
+
+                response_text = await response.text()
 
                 if response.status == 200:
-                    data = await response.json()
-                    print("✅ Proxy is working correctly!")
-                    print(f"Response contains {len(data.get('data', []))} models")
+                    try:
+                        data = json.loads(response_text)
+                        print("✅ Proxy is working correctly and API call was successful!")
+                        # Print a snippet of the response, e.g., the first choice's message content
+                        if data.get("choices") and len(data["choices"]) > 0:
+                            first_choice = data["choices"][0]
+                            if first_choice.get("message") and first_choice["message"].get("content"):
+                                print(f"Assistant's reply: {first_choice['message']['content'][:100]}...")
+                            else:
+                                print(f"Response (full): {json.dumps(data, indent=2)}")
+                        else:
+                            print(f"Response (full): {json.dumps(data, indent=2)}")
+                    except json.JSONDecodeError:
+                        print("⚠️ Proxy returned 200 but response is not valid JSON.")
+                        print(f"Response snippet: {response_text[:500]}...")
                 elif response.status == 401:
-                    print("✅ Proxy is working (got 401 - authentication required)")
-                    print("This is expected without a valid API key")
+                    print("❌ Proxy is working, but OpenAI API authentication failed (401).")
+                    print("   Please check your OPENAI_API_KEY.")
+                    print(f"Response snippet: {response_text[:500]}...")
+                elif response.status == 429:
+                    print("❌ Proxy is working, but OpenAI API rate limit exceeded (429).")
+                    print("   You might need to wait or check your usage.")
+                    print(f"Response snippet: {response_text[:500]}...")
+                elif response.status == 404 and "model_not_found" in response_text:
+                    print(f"❌ Proxy is working, but the model '{payload['model']}' was not found (404).")
+                    print("   You might need to use a different model name (e.g., gpt-3.5-turbo).")
+                    print(f"Response snippet: {response_text[:500]}...")
                 else:
                     print(f"⚠️  Proxy returned status {response.status}")
-                    text = await response.text()
-                    print(f"Response: {text[:200]}...")
+                    print(f"Response snippet: {response_text[:500]}...")
 
     except aiohttp.ClientConnectorError as e:
         print(f"❌ Connection failed: {e}")
@@ -97,6 +143,12 @@ def main():
     parser.add_argument(
         "--port", type=int, default=8080, help="Proxy server port (default: 8080)"
     )
+    parser.add_argument(
+        "--api-key",
+        type=str,
+        default=os.getenv("OPENAI_API_KEY"),
+        help="OpenAI API key. Can also be set via OPENAI_API_KEY environment variable."
+    )
 
     args = parser.parse_args()
 
@@ -108,7 +160,7 @@ def main():
 
     try:
         # Run tests
-        loop.run_until_complete(test_proxy(args.host, args.port))
+        loop.run_until_complete(test_proxy(args.host, args.port, args.api_key))
         loop.run_until_complete(test_cors(args.host, args.port))
 
         print("\n" + "=" * 50)
