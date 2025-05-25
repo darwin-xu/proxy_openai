@@ -88,6 +88,7 @@ class OpenAIProxy:
 
             logger.info(f"Proxying {request.method} {target_url}")
             logger.debug(f"Headers: {dict(headers)}")
+            logger.debug(f"Body: {body[:100] if body else 'No body'}")
 
             # Make the request to OpenAI
             async with self.session.request(
@@ -120,6 +121,12 @@ class OpenAIProxy:
 
                 logger.info(
                     f"Response: {response.status} for {request.method} {target_url}"
+                )
+
+                logger.debug(f"Response Status: {response.status}")
+                logger.debug(f"Response Headers: {resp_headers}")
+                logger.debug(
+                    f"Response Body: {response_body[:100] if response_body else 'No body'}"
                 )
 
                 # Create and return the response
