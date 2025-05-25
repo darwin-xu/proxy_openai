@@ -23,12 +23,6 @@ import sys
 from aiohttp import web, ClientSession
 from typing import Optional
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler("proxy.log")],
-)
 logger = logging.getLogger(__name__)
 
 # OpenAI API base URL
@@ -195,8 +189,29 @@ async def main():
         default=os.getenv("PROXY_HOST", "0.0.0.0"),
         help="Host to bind the server to (default: 0.0.0.0)",
     )
+    parser.add_argument(
+        "--log-level",
+        type=str,
+        default=os.getenv("PROXY_LOG_LEVEL", "INFO"),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="Set the logging level (default: INFO)",
+    )
 
     args = parser.parse_args()
+
+    # Configure logging based on command-line argument
+    numeric_level = getattr(logging, args.log_level.upper(), None)
+    if not isinstance(numeric_level, int):
+        raise ValueError(f"Invalid log level: {args.log_level}")
+
+    logging.basicConfig(
+        level=numeric_level,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler("proxy.log"),
+        ],
+    )
 
     app = await create_app()
 
