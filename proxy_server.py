@@ -15,6 +15,7 @@ Environment Variables:
 """
 
 import asyncio
+import gzip
 import aiohttp
 import argparse
 import logging
@@ -46,6 +47,7 @@ class OpenAIProxy:
             timeout=timeout,
             connector=connector,
             headers={"User-Agent": "OpenAI-Proxy/1.0"},
+            auto_decompress=False,
         )
 
     async def close_session(self):
@@ -125,9 +127,12 @@ class OpenAIProxy:
 
                 logger.debug(f"Response Status: {response.status}")
                 logger.debug(f"Response Headers: {resp_headers}")
-                logger.debug(
-                    f"Response Body: {response_body[:100] if response_body else 'No body'}"
-                )
+                # unzip the response body if it is compressed
+                if response.headers.get("Content-Encoding") == "gzip":
+                    unzipped_response_body = gzip.decompress(response_body)
+                    logger.debug(
+                        f"Response Body: {unzipped_response_body if unzipped_response_body else 'No body'}"
+                    )
 
                 # Create and return the response
                 return web.Response(
