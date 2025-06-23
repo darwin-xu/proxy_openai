@@ -7,6 +7,7 @@ This is a Python-based HTTP proxy server that forwards requests from your local 
 - **Async HTTP Proxy**: High-performance asynchronous proxy using aiohttp
 - **Full Request Forwarding**: Preserves all headers, request body, and HTTP methods
 - **CORS Support**: Handles browser CORS preflight requests automatically
+- **Client IP Restriction**: Optional restriction to allow connections only from specific IP addresses
 - **Logging**: Comprehensive logging to both console and file
 - **Error Handling**: Robust error handling with meaningful error messages
 - **Configurable**: Command-line arguments and environment variable support
@@ -23,12 +24,23 @@ pip3 install -r requirements.txt
 
 **Option A: Using the startup script (recommended)**
 ```bash
-./start_proxy.sh [port] [host]
+# Basic usage
+./start_proxy.sh [port] [host] [client_ip]
+
+# Examples
+./start_proxy.sh                    # Default: port 8080, host 0.0.0.0, no IP restriction
+./start_proxy.sh 3001               # Port 3001, host 0.0.0.0, no IP restriction  
+./start_proxy.sh 8080 127.0.0.1     # Port 8080, host 127.0.0.1, no IP restriction
+./start_proxy.sh 8080 0.0.0.0 192.168.1.100  # Port 8080, host 0.0.0.0, only allow 192.168.1.100
 ```
 
 **Option B: Direct Python execution**
 ```bash
+# Basic usage
 python3 proxy_server.py --port 8080 --host 0.0.0.0
+
+# With client IP restriction
+python3 proxy_server.py --port 8080 --host 0.0.0.0 --client 192.168.1.100
 ```
 
 ### 3. Configure Your Vite Client
@@ -79,6 +91,8 @@ const response = await fetch('/openai/v1/chat/completions', {
 
 - `--port`: Port to run the server on (default: 8080)
 - `--host`: Host to bind the server to (default: 0.0.0.0)
+- `--client`: Only allow connections from this specific client IP address (optional)
+- `--log-level`: Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
 
 ### Environment Variables
 
@@ -93,6 +107,12 @@ python3 proxy_server.py --port 3001
 
 # Run on localhost only
 python3 proxy_server.py --host 127.0.0.1
+
+# Restrict to specific client IP
+python3 proxy_server.py --client 192.168.1.50
+
+# Combine multiple options
+python3 proxy_server.py --port 3001 --host 127.0.0.1 --client 10.0.0.25
 
 # Using environment variables
 PROXY_PORT=3001 PROXY_HOST=127.0.0.1 python3 proxy_server.py
@@ -141,6 +161,35 @@ Log levels:
 - Ensure your VPS firewall only allows connections from trusted sources
 - Consider adding API key validation if needed
 - The proxy runs on all interfaces (0.0.0.0) by default - restrict if needed
+
+## Security Features
+
+### Client IP Restriction
+
+The proxy server supports restricting access to specific client IP addresses using the `--client` parameter:
+
+```bash
+# Only allow connections from 192.168.1.100
+python3 proxy_server.py --client 192.168.1.100
+```
+
+**How it works:**
+- The server checks the client IP from the request headers and connection
+- Supports `X-Forwarded-For` header for reverse proxy setups
+- Supports `X-Real-IP` header for nginx configurations
+- Falls back to the direct connection IP if no proxy headers are present
+- Blocks all requests from non-matching IPs with a 403 Forbidden response
+
+**Use cases:**
+- Restrict proxy access to specific development machines
+- Secure the proxy when deployed on a public server
+- Prevent unauthorized usage of your OpenAI API key through the proxy
+
+**Example with reverse proxy:**
+```bash
+# If using nginx with X-Real-IP header
+python3 proxy_server.py --client 203.0.113.45
+```
 
 ## Troubleshooting
 

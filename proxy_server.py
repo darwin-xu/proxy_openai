@@ -7,7 +7,7 @@ and the OpenAI API. It forwards all requests to api.openai.com while
 preserving headers, method, and body content.
 
 Usage:
-    python proxy_server.py [--port PORT] [--host HOST]
+    python proxy_server.py [--port PORT] [--host HOST] [--client CLIENT_IP]
 
 Environment Variables:
     PROXY_PORT: Port to run the proxy server on (default: 8080)
@@ -31,8 +31,9 @@ OPENAI_API_BASE = "https://api.openai.com"
 
 
 class OpenAIProxy:
-    def __init__(self):
+    def __init__(self, allowed_client_ip: Optional[str] = None):
         self.session: Optional[ClientSession] = None
+        self.allowed_client_ip = allowed_client_ip
 
     async def create_session(self):
         """Create aiohttp client session with proper configuration"""
@@ -55,10 +56,37 @@ class OpenAIProxy:
         if self.session:
             await self.session.close()
 
+    def _get_client_ip(self, request: web.Request) -> str:
+        """Extract the client IP address from the request"""
+        # Check for X-Forwarded-For header (for reverse proxies)
+        forwarded_for = request.headers.get('X-Forwarded-For')
+        if forwarded_for:
+            # Take the first IP in the chain
+            return forwarded_for.split(',')[0].strip()
+        
+        # Check for X-Real-IP header (for nginx)
+        real_ip = request.headers.get('X-Real-IP')
+        if real_ip:
+            return real_ip.strip()
+        
+        # Fall back to remote address
+        return request.remote
+
     async def proxy_request(self, request: web.Request) -> web.Response:
         """
         Proxy the incoming request to OpenAI API
         """
+        # Check client IP if restriction is enabled
+        if self.allowed_client_ip:
+            client_ip = self._get_client_ip(request)
+            if client_ip != self.allowed_client_ip:
+                logger.warning(f"Access denied for client IP: {client_ip} (allowed: {self.allowed_client_ip})")
+                return web.Response(
+                    text="Access denied: Client IP not allowed",
+                    status=403,
+                    headers={"Access-Control-Allow-Origin": "*"},
+                )
+
         try:
             # Construct the target URL
             path = request.path_qs
@@ -156,6 +184,17 @@ class OpenAIProxy:
 
     async def handle_options(self, request: web.Request) -> web.Response:
         """Handle CORS preflight requests"""
+        # Check client IP if restriction is enabled
+        if self.allowed_client_ip:
+            client_ip = self._get_client_ip(request)
+            if client_ip != self.allowed_client_ip:
+                logger.warning(f"Access denied for CORS preflight from client IP: {client_ip} (allowed: {self.allowed_client_ip})")
+                return web.Response(
+                    text="Access denied: Client IP not allowed",
+                    status=403,
+                    headers={"Access-Control-Allow-Origin": "*"},
+                )
+
         return web.Response(
             headers={
                 "Access-Control-Allow-Origin": "*",
@@ -166,9 +205,9 @@ class OpenAIProxy:
         )
 
 
-async def create_app() -> web.Application:
+async def create_app(allowed_client_ip: Optional[str] = None) -> web.Application:
     """Create and configure the web application"""
-    proxy = OpenAIProxy()
+    proxy = OpenAIProxy(allowed_client_ip)
     await proxy.create_session()
 
     app = web.Application()
@@ -208,6 +247,11 @@ async def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
         help="Set the logging level (default: INFO)",
     )
+    parser.add_argument(
+        "--client",
+        type=str,
+        help="Only allow connections from this specific client IP address",
+    )
 
     args = parser.parse_args()
 
@@ -225,10 +269,14 @@ async def main():
         ],
     )
 
-    app = await create_app()
+    app = await create_app(args.client)
 
     logger.info(f"Starting OpenAI proxy server on {args.host}:{args.port}")
     logger.info(f"Proxying requests to {OPENAI_API_BASE}")
+    if args.client:
+        logger.info(f"Only allowing connections from client IP: {args.client}")
+    else:
+        logger.info("Allowing connections from all client IPs")
 
     try:
         # Run the server

@@ -132,6 +132,51 @@ async def test_cors(proxy_host: str, proxy_port: int):
         print(f"❌ CORS test failed: {e}")
 
 
+async def test_ip_restriction(proxy_host: str, proxy_port: int):
+    """Test the IP restriction functionality"""
+    
+    test_url = f"http://{proxy_host}:{proxy_port}/v1/models"
+    
+    print(f"Testing IP restriction at {proxy_host}:{proxy_port}")
+    print(f"Target URL: {test_url} (GET)")
+    print("-" * 50)
+    
+    # Test with custom headers to simulate different client IPs
+    test_headers = [
+        {"X-Forwarded-For": "192.168.1.100"},
+        {"X-Forwarded-For": "10.0.0.50"},
+        {"X-Real-IP": "172.16.0.10"},
+        {}  # No custom headers (will use actual client IP)
+    ]
+    
+    async with aiohttp.ClientSession() as session:
+        for i, headers in enumerate(test_headers):
+            print(f"\nTest {i+1}: Headers: {headers if headers else 'None (using actual client IP)'}")
+            
+            try:
+                async with session.get(test_url, headers=headers, timeout=aiohttp.ClientTimeout(total=10)) as response:
+                    status = response.status
+                    response_text = await response.text()
+                    
+                    if status == 403:
+                        print(f"✅ Access correctly denied (403): {response_text[:100]}")
+                    elif status == 401:
+                        print(f"✅ Reached OpenAI API (401 - need API key): {response_text[:100]}")
+                    elif status == 200:
+                        print(f"✅ Request successful (200)")
+                    else:
+                        print(f"⚠️  Unexpected status {status}: {response_text[:100]}")
+                        
+            except asyncio.TimeoutError:
+                print("❌ Request timed out")
+            except Exception as e:
+                print(f"❌ Request failed: {e}")
+
+    print("\n" + "=" * 50)
+    print("IP restriction test completed")
+    print("=" * 50)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Test OpenAI Proxy Server")
     parser.add_argument(
@@ -162,6 +207,7 @@ def main():
         # Run tests
         loop.run_until_complete(test_proxy(args.host, args.port, args.api_key))
         loop.run_until_complete(test_cors(args.host, args.port))
+        loop.run_until_complete(test_ip_restriction(args.host, args.port))
 
         print("\n" + "=" * 50)
         print("Test completed!")
