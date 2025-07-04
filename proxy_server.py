@@ -140,11 +140,12 @@ class OpenAIProxy:
                 }
 
                 # Add CORS headers for browser compatibility
-                resp_headers["Access-Control-Allow-Origin"] = "*"
+                resp_headers["Access-Control-Allow-Origin"] = "http://localhost:3000"
+                resp_headers["Access-Control-Allow-Credentials"] = "true"
                 resp_headers["Access-Control-Allow-Methods"] = (
                     "GET, POST, PUT, DELETE, OPTIONS"
                 )
-                resp_headers["Access-Control-Allow-Headers"] = "*"
+                resp_headers["Access-Control-Allow-Headers"] = "authorization, content-type"
 
                 # Read response body
                 response_body = await response.read()
@@ -197,9 +198,10 @@ class OpenAIProxy:
 
         return web.Response(
             headers={
-                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Origin": "http://localhost:3000",
+                "Access-Control-Allow-Credentials": "true",
                 "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-                "Access-Control-Allow-Headers": "*",
+                "Access-Control-Allow-Headers": "authorization, content-type",
                 "Access-Control-Max-Age": "86400",
             }
         )
